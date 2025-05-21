@@ -13,7 +13,7 @@ app.get("/temperatura", (req, res) => {
 
 
 app.get("/otro", (req, res) => {
-  res.json({ valor: "Hola", timestamp: new Date().toISOString() });
+  res.json({ valor: "Hola mundo", timestamp: new Date().toISOString() });
 });
 
 
