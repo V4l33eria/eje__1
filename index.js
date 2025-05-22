@@ -12,10 +12,13 @@ app.get("/temperatura", (req, res) => {
 });
 
 
-app.get("/otro", (req, res) => {
-  res.json({ valor: "Hola mundo", timestamp: new Date().toISOString() });
+app.get("/nombres", (req, res) => {
+  res.json({  valor: "Hola mundo", nombres: ["Juan", "Ana", "Luis"], timestamp: new Date().toISOString() });
 });
 
+app.get("/velocidad", (req, res) => {
+  res.json({ valor: "25 km/h", timestamp: new Date().toISOString() });
+});
 
 app.listen(port, () => {
   console.log(`Servidor corriendo en puerto ${port}`);
