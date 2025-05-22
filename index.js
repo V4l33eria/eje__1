@@ -12,8 +12,8 @@ app.get("/temperatura", (req, res) => {
 });
 
 
-app.get("/nombres", (req, res) => {
-  res.json({  valor: "Hola mundo", nombres: ["Juan", "Ana", "Luis"], timestamp: new Date().toISOString() });
+app.get("/Universidad", (req, res) => {
+  res.json({ nombres: ["Universidad Tecnológica de la Laguna Durango"], timestamp: new Date().toISOString() });
 });
 
 app.get("/velocidad", (req, res) => {
