@@ -66,9 +66,27 @@ app.post("/savedata", async (req, res) => {
 });
 
 // Endpoint para obtener datos 
-app.get("/getdata", async (req, res) => {
+//app.get("/getdata", async (req, res) => {
+ // try {
+ //  const result = await pool.query("SELECT * FROM data ORDER BY id");
+    
+   // return res.status(200).json({ 
+  //    message: "✅ Datos obtenidos exitosamente",
+   //   data: result.rows,
+   //   total: result.rows.length
+   // });
+ // } catch (error) {
+ //   console.error("❌ Error:", error.message);
+ //   res.status(500).json({ error: "Error al obtener datos" });
+ // }
+//});
+
+// Endpoint para obtener datos
+app.get("/get-data", async (req, res) => {
+  const tableName = "data";
+  
   try {
-    const result = await pool.query("SELECT * FROM data ORDER BY id");
+    const result = await pool.query(`SELECT * FROM ${tableName} ORDER BY id`);
     
     return res.status(200).json({ 
       message: "✅ Datos obtenidos exitosamente",
