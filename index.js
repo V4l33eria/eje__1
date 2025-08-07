@@ -10,7 +10,7 @@ app.use(express.json());
 // Endpoint para crear tabla 
 app.post("/create-table", async (req, res) => {
   try {
-    const tableName = "data";
+    const tableName = "device_logs";
 
     const checkTable = await pool.query("SELECT to_regclass($1) AS exists", [
       tableName,
