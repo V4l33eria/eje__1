@@ -39,7 +39,7 @@ app.post("/create-device-tables", async (req, res) => {
           action VARCHAR(50) NOT NULL,
           "user" TEXT NOT NULL,
           enroll_id TEXT NOT NULL,
-          timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          timestamp TIMESTAMP
         )
       `);
     }
@@ -71,7 +71,6 @@ app.post("/create-device-tables", async (req, res) => {
       `);
     }
 
-    // Agregar verificación/creación de la tabla "data"
     const checkData = await pool.query(
       'SELECT to_regclass($1)::text AS exists',
       ['public.data']
@@ -81,7 +80,7 @@ app.post("/create-device-tables", async (req, res) => {
         CREATE TABLE data (
           id SERIAL PRIMARY KEY,
           value TEXT NOT NULL,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          created_at TIMESTAMP
         )
       `);
     }
@@ -155,10 +154,14 @@ app.post("/turn-on", verifyToken, async (req, res) => {
       ON CONFLICT (id) DO NOTHING
     `);
 
+    const localTime = new Date().toLocaleString("en-US", {
+      timeZone: "America/Mazatlan"
+    });
+
     await pool.query(`
-      INSERT INTO device_logs (action, "user", enroll_id)
-      VALUES ($1, $2, $3)
-    `, ["encender", req.user.email, "relay_1"]);
+      INSERT INTO device_logs (action, "user", enroll_id, timestamp)
+      VALUES ($1, $2, $3, $4)
+    `, ["encender", req.user.email, "relay_1", localTime]);
 
     return res.json({ status: { isOn: true } });
   } catch (err) {
@@ -172,10 +175,14 @@ app.post("/turn-off", verifyToken, async (req, res) => {
   try {
     await pool.query('DELETE FROM relay_status WHERE id = $1', [1]);
 
+    const localTime = new Date().toLocaleString("en-US", {
+      timeZone: "America/Mazatlan"
+    });
+
     await pool.query(`
-      INSERT INTO device_logs (action, "user", enroll_id)
-      VALUES ($1, $2, $3)
-    `, ["apagar", req.user.email, "relay_1"]);
+      INSERT INTO device_logs (action, "user", enroll_id, timestamp)
+      VALUES ($1, $2, $3, $4)
+    `, ["apagar", req.user.email, "relay_1", localTime]);
 
     return res.json({ status: { isOn: false } });
   } catch (err) {
@@ -202,11 +209,16 @@ app.post("/save-data", async (req, res) => {
   if (!value) {
     return res.status(400).json({ error: "El campo 'value' es requerido" });
   }
+
+  const localTime = new Date().toLocaleString("en-US", {
+    timeZone: "America/Mazatlan"
+  });
+
   const tableName = "data";
   try {
     const result = await pool.query(
-      `INSERT INTO ${tableName} (value) VALUES ($1) RETURNING *`,
-      [value]
+      `INSERT INTO ${tableName} (value, created_at) VALUES ($1, $2) RETURNING *`,
+      [value, localTime]
     );
     return res.status(201).json({
       message: "✅ Datos guardados exitosamente",
