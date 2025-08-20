@@ -1,13 +1,16 @@
 import pool from "./db.js";
 import express from "express";
 import cors from "cors";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
 
 const app = express();
+const SECRET_KEY = "1234567"; 
 
 app.use(cors());
 app.use(express.json());
 
-// Endpoint para crear tabla 
+// 🔧 Crear tablas necesarias
 app.post("/create-device-tables", async (req, res) => {
   try {
     // --- device_logs ---
@@ -15,7 +18,6 @@ app.post("/create-device-tables", async (req, res) => {
       'SELECT to_regclass($1)::text AS exists',
       ['public.device_logs']
     );
-
     if (!checkLogs.rows[0].exists) {
       await pool.query(`
         CREATE TABLE device_logs (
@@ -33,13 +35,26 @@ app.post("/create-device-tables", async (req, res) => {
       'SELECT to_regclass($1)::text AS exists',
       ['public.relay_status']
     );
-
     if (!checkRelay.rows[0].exists) {
-      // Row existence will represent ON/OFF (id=1 present => ON)
       await pool.query(`
         CREATE TABLE relay_status (
           id INTEGER PRIMARY KEY,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    }
+
+    // --- users ---
+    const checkUsers = await pool.query(
+      'SELECT to_regclass($1)::text AS exists',
+      ['public.users']
+    );
+    if (!checkUsers.rows[0].exists) {
+      await pool.query(`
+        CREATE TABLE users (
+          id SERIAL PRIMARY KEY,
+          email TEXT UNIQUE NOT NULL,
+          password TEXT NOT NULL
         )
       `);
     }
@@ -49,6 +64,7 @@ app.post("/create-device-tables", async (req, res) => {
       tables: {
         device_logs: checkLogs.rows[0].exists ? "ya existía" : "creada",
         relay_status: checkRelay.rows[0].exists ? "ya existía" : "creada",
+        users: checkUsers.rows[0].exists ? "ya existía" : "creada",
       },
     });
   } catch (error) {
@@ -57,6 +73,53 @@ app.post("/create-device-tables", async (req, res) => {
   }
 });
 
+// 🔐 Login real
+app.post("/login", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password)
+    return res.status(400).json({ error: "Email y contraseña requeridos" });
+
+  try {
+    const result = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+    if (result.rowCount === 0)
+      return res.status(401).json({ error: "Usuario no encontrado" });
+
+    const user = result.rows[0];
+    const isValid = await bcrypt.compare(password, user.password);
+    if (!isValid)
+      return res.status(401).json({ error: "Contraseña incorrecta" });
+
+    const token = jwt.sign({ id: user.id, email: user.email }, SECRET_KEY, {
+      expiresIn: "2h",
+    });
+
+    return res.json({ token, email: user.email });
+  } catch (err) {
+    console.error("❌ Error en login:", err.message);
+    return res.status(500).json({ error: "Error al iniciar sesión" });
+  }
+});
+
+// 📝 Registro de usuario (opcional)
+app.post("/register", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password)
+    return res.status(400).json({ error: "Email y contraseña requeridos" });
+
+  try {
+    const hashed = await bcrypt.hash(password, 10);
+    await pool.query("INSERT INTO users (email, password) VALUES ($1, $2)", [
+      email,
+      hashed,
+    ]);
+    return res.status(201).json({ message: "✅ Usuario registrado" });
+  } catch (err) {
+    console.error("❌ Error en registro:", err.message);
+    return res.status(500).json({ error: "Error al registrar usuario" });
+  }
+});
+
+// 💡 Control de foco
 app.post("/turn-on", async (req, res) => {
   try {
     await pool.query(`
@@ -91,10 +154,9 @@ app.get("/status", async (req, res) => {
   }
 });
 
-
+// 📥 Guardar datos
 app.post("/save-data", async (req, res) => {
   const { value } = req.body;
-
   if (!value) {
     return res.status(400).json({ error: "El campo 'value' es requerido" });
   }
@@ -104,7 +166,6 @@ app.post("/save-data", async (req, res) => {
       `INSERT INTO ${tableName} (value) VALUES ($1) RETURNING *`,
       [value]
     );
-
     return res.status(201).json({
       message: "✅ Datos guardados exitosamente",
       data: result.rows[0],
@@ -115,29 +176,11 @@ app.post("/save-data", async (req, res) => {
   }
 });
 
-// Endpoint para obtener datos 
-//app.get("/getdata", async (req, res) => {
- // try {
- //  const result = await pool.query("SELECT * FROM data ORDER BY id");
-    
-   // return res.status(200).json({ 
-  //    message: "✅ Datos obtenidos exitosamente",
-   //   data: result.rows,
-   //   total: result.rows.length
-   // });
- // } catch (error) {
- //   console.error("❌ Error:", error.message);
- //   res.status(500).json({ error: "Error al obtener datos" });
- // }
-//});
-
-// Endpoint para obtener datos
+// 📤 Obtener datos
 app.get("/get-data", async (req, res) => {
   const tableName = "data";
-  
   try {
     const result = await pool.query(`SELECT * FROM ${tableName} ORDER BY id`);
-    
     return res.status(200).json({ 
       message: "✅ Datos obtenidos exitosamente",
       data: result.rows,
@@ -149,18 +192,15 @@ app.get("/get-data", async (req, res) => {
   }
 });
 
-// Endpoint para eliminar tabla 
+// 🗑️ Eliminar tabla
 app.post("/delete-table", async (req, res) => {
   try {
     const tableName = "data";
-
     const checkTable = await pool.query("SELECT to_regclass($1) AS exists", [
       tableName,
     ]);
-
     if (checkTable.rows[0].exists) {
       await pool.query(`DROP TABLE ${tableName}`);
-      
       return res.status(200).json({ message: "✅ Tabla eliminada exitosamente" });
     } else {
       return res.status(404).json({ message: "ℹ La tabla no existe" });
@@ -171,13 +211,12 @@ app.post("/delete-table", async (req, res) => {
   }
 });
 
-// Endpoint de temperatura 
+// 🌡️ Temperatura simulada
 app.get("/temperatura", (req, res) => {
   res.json({ valor: "10 °C", timestamp: new Date().toISOString() });
 });
 
 const PORT = process.env.PORT || 3002;
-
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en puerto ${PORT}`);
 });
