@@ -274,3 +274,21 @@ const PORT = process.env.PORT || 3002;
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en puerto ${PORT}`);
 });
+
+app.get("/logs", async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userEmail = decoded.email;
+
+    const result = await pool.query(
+      `SELECT action, timestamp FROM device_logs WHERE "user" = $1 ORDER BY timestamp DESC`,
+      [userEmail]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error al obtener logs:", err);
+    res.status(500).json({ error: "No se pudieron obtener los logs" });
+  }
+});
