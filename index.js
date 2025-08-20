@@ -5,15 +5,29 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 
 const app = express();
-const SECRET_KEY = "1234567"; 
+const SECRET_KEY = "1234567";
 
 app.use(cors());
 app.use(express.json());
 
+// 🔐 Middleware para verificar token
+function verifyToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Token requerido" });
+
+  const token = authHeader.split(" ")[1];
+  try {
+    const decoded = jwt.verify(token, SECRET_KEY);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(403).json({ error: "Token inválido" });
+  }
+}
+
 // 🔧 Crear tablas necesarias
 app.post("/create-device-tables", async (req, res) => {
   try {
-    // --- device_logs ---
     const checkLogs = await pool.query(
       'SELECT to_regclass($1)::text AS exists',
       ['public.device_logs']
@@ -30,7 +44,6 @@ app.post("/create-device-tables", async (req, res) => {
       `);
     }
 
-    // --- relay_status ---
     const checkRelay = await pool.query(
       'SELECT to_regclass($1)::text AS exists',
       ['public.relay_status']
@@ -44,7 +57,6 @@ app.post("/create-device-tables", async (req, res) => {
       `);
     }
 
-    // --- users ---
     const checkUsers = await pool.query(
       'SELECT to_regclass($1)::text AS exists',
       ['public.users']
@@ -59,12 +71,28 @@ app.post("/create-device-tables", async (req, res) => {
       `);
     }
 
+    // Agregar verificación/creación de la tabla "data"
+    const checkData = await pool.query(
+      'SELECT to_regclass($1)::text AS exists',
+      ['public.data']
+    );
+    if (!checkData.rows[0].exists) {
+      await pool.query(`
+        CREATE TABLE data (
+          id SERIAL PRIMARY KEY,
+          value TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    }
+
     return res.status(201).json({
       message: "✅ Tablas verificadas/creadas",
       tables: {
         device_logs: checkLogs.rows[0].exists ? "ya existía" : "creada",
         relay_status: checkRelay.rows[0].exists ? "ya existía" : "creada",
         users: checkUsers.rows[0].exists ? "ya existía" : "creada",
+        data: checkData.rows[0].exists ? "ya existía" : "creada",
       },
     });
   } catch (error) {
@@ -100,7 +128,7 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// 📝 Registro de usuario (opcional)
+// 📝 Registro de usuario
 app.post("/register", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)
@@ -119,13 +147,19 @@ app.post("/register", async (req, res) => {
   }
 });
 
-// 💡 Control de foco
-app.post("/turn-on", async (req, res) => {
+// 💡 Encender foco
+app.post("/turn-on", verifyToken, async (req, res) => {
   try {
     await pool.query(`
       INSERT INTO relay_status (id) VALUES (1)
       ON CONFLICT (id) DO NOTHING
     `);
+
+    await pool.query(`
+      INSERT INTO device_logs (action, "user", enroll_id)
+      VALUES ($1, $2, $3)
+    `, ["encender", req.user.email, "relay_1"]);
+
     return res.json({ status: { isOn: true } });
   } catch (err) {
     console.error("Error /turn-on:", err.message);
@@ -133,9 +167,16 @@ app.post("/turn-on", async (req, res) => {
   }
 });
 
-app.post("/turn-off", async (req, res) => {
+// 💡 Apagar foco
+app.post("/turn-off", verifyToken, async (req, res) => {
   try {
     await pool.query('DELETE FROM relay_status WHERE id = $1', [1]);
+
+    await pool.query(`
+      INSERT INTO device_logs (action, "user", enroll_id)
+      VALUES ($1, $2, $3)
+    `, ["apagar", req.user.email, "relay_1"]);
+
     return res.json({ status: { isOn: false } });
   } catch (err) {
     console.error("Error /turn-off:", err.message);
@@ -143,9 +184,10 @@ app.post("/turn-off", async (req, res) => {
   }
 });
 
+// 📊 Estado del foco
 app.get("/status", async (req, res) => {
   try {
-    const result = await pool.query('SELECT 1 FROM relay_status WHERE id = $1', [1]);
+    const result = await pool.query('SELECT * FROM relay_status WHERE id = $1', [1]);
     const isOn = result.rowCount > 0;
     return res.json({ status: { isOn } });
   } catch (err) {
@@ -207,7 +249,7 @@ app.post("/delete-table", async (req, res) => {
     }
   } catch (error) {
     console.error("❌ Error:", error.message);
-    res.status(500).json({ error: "Error al procesar la solicitud" });
+    res.status(500).json({ error: "Error al eliminar la tabla" });
   }
 });
 
